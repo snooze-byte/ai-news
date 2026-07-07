@@ -19,6 +19,10 @@ const PORT = parseInt(process.env.PORT || '3000', 10)
 app.use(cors({ origin: '*' }))
 app.use(express.json())
 
+// Health check (no DB required)
+  app.get('/api/health', (_req, res) => {
+    res.json({ status: 'ok', time: new Date().toISOString() })
+  })
 // API routes
 
 /** 获取新闻列表 */
@@ -193,22 +197,25 @@ app.get('*', (_req, res) => {
 
 // Start server
 async function main() {
-  // Initialize database
-  await initDB()
+    // Initialize database (don't crash on failure)
+    try {
+      await initDB()
+      // Start cron job for daily brief
+      startCronJob()
+    } catch (err) {
+      console.error('⚠️ 数据库初始化失败，但服务仍会启动:', err)
+    }
 
-  // Start cron job for daily brief
-  startCronJob()
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`\n🚀 AI 小白每日资讯 服务已启动`)
+      console.log(`   API:  http://0.0.0.0:${PORT}/api`)
+      console.log(`   前端: http://0.0.0.0:${PORT}\n`)
+    })
+  }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n🚀 AI 小白每日资讯 服务已启动`)
-    console.log(`   API:  http://0.0.0.0:${PORT}/api`)
-    console.log(`   前端: http://0.0.0.0:${PORT}\n`)
+  main().catch((err) => {
+    console.error('启动失败:', err)
+    process.exit(1)
   })
-}
 
-main().catch((err) => {
-  console.error('启动失败:', err)
-  process.exit(1)
-})
-
-export default app
+  export default app
