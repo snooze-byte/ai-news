@@ -1,4 +1,3 @@
-
 FROM node:20-alpine AS builder
 
   WORKDIR /app
@@ -7,14 +6,14 @@ FROM node:20-alpine AS builder
   RUN npm ci
 
   COPY . .
-
   RUN npm run build
 
   FROM node:20-alpine AS runner
 
   WORKDIR /app
 
-  COPY --from=builder /app/dist ./dist
+  COPY --from=builder /app/server ./server
+  COPY --from=builder /app/dist/client ./dist/client
   COPY --from=builder /app/package.json ./
 
   RUN npm ci --omit=dev
@@ -24,4 +23,4 @@ FROM node:20-alpine AS builder
 
   EXPOSE 3000
 
-  CMD ["node", "dist/server/index.js"]
+  CMD ["npx", "tsx", "server/index.ts"]
