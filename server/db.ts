@@ -3,29 +3,37 @@ import dotenv from 'dotenv'
 
 dotenv.config()
 
+const DB_MODE = process.env.DB_MODE || 'remote'
 const TURSO_URL = process.env.TURSO_DATABASE_URL
 const TURSO_TOKEN = process.env.TURSO_AUTH_TOKEN
 
-if (!TURSO_URL || !TURSO_TOKEN) {
-  console.error('❌ 缺少 Turso 数据库配置，请检查 .env 文件中的 TURSO_DATABASE_URL 和 TURSO_AUTH_TOKEN')
+const isLocal = DB_MODE === 'local'
+
+if (!isLocal && (!TURSO_URL || !TURSO_TOKEN)) {
+  console.error('❌ 缺少 Turso 数据库配置，请检查 .env 中的 TURSO_DATABASE_URL 和 TURSO_AUTH_TOKEN')
   process.exit(1)
 }
 
-export const db = createClient({
-  url: TURSO_URL,
-  authToken: TURSO_TOKEN,
-})
+const dbConfig = isLocal
+  ? { url: 'file:local.db' }
+  : { url: TURSO_URL!, authToken: TURSO_TOKEN! }
+
+export const db = createClient(dbConfig)
 
 export async function initDB() {
-  console.log('🔌 正在连接 Turso 数据库...')
+  const label = isLocal ? '本地 SQLite' : 'Turso 云数据库'
+  const urlLabel = isLocal ? 'local.db' : TURSO_URL
+
+  console.log(`🔌 正在连接 ${label} (${urlLabel})...`)
 
   try {
-    // Test connection
     await db.execute('SELECT 1')
-    console.log('✅ Turso 数据库连接成功')
+    console.log(`✅ ${label} 连接成功`)
   } catch (err) {
-    console.error('❌ Turso 数据库连接失败:', err)
-    console.error('请检查 TURSO_DATABASE_URL 和 TURSO_AUTH_TOKEN 是否正确')
+    console.error(`❌ ${label} 连接失败:`, err)
+    if (!isLocal) {
+      console.error('请检查 TURSO_DATABASE_URL 和 TURSO_AUTH_TOKEN 是否正确')
+    }
     process.exit(1)
   }
 
