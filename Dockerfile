@@ -1,31 +1,27 @@
-# ===== Stage 1: Build =====
+
 FROM node:20-alpine AS builder
 
-WORKDIR /app
+  WORKDIR /app
 
-# Install dependencies
-COPY package.json package-lock.json* ./
-RUN npm ci --ignore-scripts
+  COPY package.json package-lock.json* ./
+  RUN npm ci
 
-# Copy source
-COPY . .
+  COPY . .
 
-# Build frontend and backend
-RUN npm run build
+  RUN npm run build
 
-# ===== Stage 2: Production =====
-FROM node:20-alpine AS runner
+  FROM node:20-alpine AS runner
 
-WORKDIR /app
+  WORKDIR /app
 
-# Copy built assets
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/node_modules ./node_modules
+  COPY --from=builder /app/dist ./dist
+  COPY --from=builder /app/package.json ./
 
-ENV NODE_ENV=production
-ENV PORT=3000
+  RUN npm ci --omit=dev
 
-EXPOSE 3000
+  ENV NODE_ENV=production
+  ENV PORT=3000
 
-CMD ["node", "dist/server/index.js"]
+  EXPOSE 3000
+
+  CMD ["node", "dist/server/index.js"]
