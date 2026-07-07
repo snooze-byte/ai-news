@@ -183,7 +183,7 @@ app.post('/api/generate-brief', async (_req, res) => {
 })
 
 // Serve static files in production
-const clientDistPath = path.resolve(__dirname, '..', 'client')
+const clientDistPath = path.resolve(__dirname, '..', 'dist', 'client')
 app.use(express.static(clientDistPath))
 
 // SPA fallback
