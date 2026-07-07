@@ -15,8 +15,8 @@ FROM node:20-alpine AS builder
   COPY --from=builder /app/server ./server
   COPY --from=builder /app/dist/client ./dist/client
   COPY --from=builder /app/package.json ./
-
-  RUN npm ci --omit=dev
+  COPY --from=builder /app/package-lock.json ./
+  COPY --from=builder /app/node_modules ./node_modules
 
   ENV NODE_ENV=production
   ENV PORT=3000
