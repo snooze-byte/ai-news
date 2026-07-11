@@ -139,7 +139,37 @@ import dotenv from 'dotenv'
       res.status(500).json({ error: '刷新新闻失败' })
     }
   })
-
+// 手动触发知识库种子（手机点一下即可）
+  app.post('/api/seed', async (_req, res) => {
+    res.json({ message: '知识库种子已在后台开始生成，约2分钟完成' })
+    try {
+      const existing = await db.execute('SELECT COUNT(*) as count FROM knowledge_base')
+      if ((existing.rows[0]?.count as number || 0) > 10) {
+        console.log('知识库已有足够内容，跳过')
+        return
+      }
+      const { generateKnowledgeContent } = await import('./services/ai.js')
+      const topics: Record<number, { desc: string; topics: string[] }> = {
+        1: { desc: 'AI基础概念入门', topics:
+  ['什么是大语言模型','Token是怎么收费的','怎么写好Prompt','AI能力边界在哪','ChatGPT和Claude和DeepSeek区别'] },
+        2: { desc: '常用工具和框架', topics: ['LangChain入门','向量数据库和RAG原理','AI文档问答怎么做','Function
+  Calling怎么用','AI编程助手对比'] },
+        3: { desc: '进阶应用与架构', topics: ['RAG架构实战','AI
+  Agent开发入门','模型微调是什么','多模态AI融合应用','AI应用成本优化'] }
+      }
+      for (const stage of [1,2,3]) {
+        for (const topic of topics[stage].topics) {
+          try {
+            const { title, content } = await generateKnowledgeContent(stage, topics[stage].desc, topic)
+            await db.execute({ sql: 'INSERT INTO knowledge_base (stage, title, content, category) VALUES (?,?,?,?)',
+  args: [stage, title, content, topics[stage].desc] })
+            console.log('  ✅ ' + title)
+          } catch (e) {}
+        }
+      }
+      console.log('📚 知识库生成完成！')
+    } catch (e) { console.error('种子失败:', e) }
+  })
   app.post('/api/generate-brief', async (_req, res) => {
     try {
       const brief = await generateAndSaveDailyBrief()
