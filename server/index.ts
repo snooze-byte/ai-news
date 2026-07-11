@@ -202,18 +202,18 @@ async function main() {
     try {
       await initDB()
       // Start cron job for daily brief
-      // 首次启动：如果知识库为空，自动生成15篇
+       // 首次启动：如果知识库为空，自动生成
     try {
       const existing = await db.execute('SELECT COUNT(*) as count FROM knowledge_base')
       if ((existing.rows[0]?.count as number || 0) === 0) {
-        console.log('📚 知识库为空，首次自动生成中（约2分钟）...')
+        console.log('📚 知识库为空，首次自动生成中...')
         const topics: Record<number, { desc: string; topics: string[] }> = {
-          1: { desc: 'AI基础概念入门', topics: ['什么是大语言模型（LLM）？用人话解释','什么是Token？为什么AI按Token收费
-  ？','Prompt怎么写好？','AI能力边界在哪？','ChatGPT、Claude、DeepSeek有什么区别？'] },
-          2: { desc: '常用工具和框架', topics: ['LangChain入门','什么是向量数据库和RAG？','如何用AI做文档问答','Function
-  Calling怎么用？','AI编程助手对比'] },
-          3: { desc: '进阶应用与架构', topics: ['RAG架构实战','AI
-  Agent开发入门','模型微调是什么？','多模态AI融合应用','AI应用成本优化'] }
+          1: { desc: 'AI基础概念入门', topics: ['什么是大语言模型','Token是什么为什么按Token收费','怎么写好Prompt','AI能
+  力边界在哪里','ChatGPT和Claude和DeepSeek区别'] },
+          2: { desc: '常用工具和框架', topics: ['LangChain入门介绍','向量数据库和RAG原理','AI文档问答怎么做','Function
+  Calling介绍','AI编程助手对比'] },
+          3: { desc: '进阶应用与架构', topics: ['RAG架构实战指南','AI
+  Agent开发入门','模型微调是什么','多模态AI融合应用','AI应用成本优化策略'] }
         }
         for (const stage of [1,2,3]) {
           const { desc, topics: ts } = topics[stage]
@@ -222,14 +222,15 @@ async function main() {
               const { title, content } = await generateKnowledgeContent(stage, desc, topic)
               await db.execute({ sql: 'INSERT INTO knowledge_base (stage, title, content, category) VALUES (?,?,?,?)',
   args: [stage, title, content, desc] })
-              console.log(`  ✅ ${title}`)
-            } catch (e) { console.warn(`  ⚠️ 跳过: ${topic}`) }
+              console.log('  ✅ ' + title)
+            } catch (e) { console.warn('  ⚠️ 跳过: ' + topic) }
           }
         }
         console.log('📚 首次知识库生成完成！')
       }
     } catch (e) { console.warn('⚠️ 自动种子检查失败:', e) }
 
+    startCronJob()
     startCronJob()
       startCronJob()
     } catch (err) {
