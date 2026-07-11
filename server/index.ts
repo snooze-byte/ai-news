@@ -195,6 +195,36 @@ app.use(express.static(clientDistPath))
 app.get('*', (_req, res) => {
   res.sendFile(path.join(clientDistPath, 'index.html'))
 })
+// 后台自动种子：不阻塞启动
+  async function autoSeedIfEmpty() {
+    setTimeout(async () => {
+      try {
+        const existing = await db.execute('SELECT COUNT(*) as count FROM knowledge_base')
+        if ((existing.rows[0]?.count as number || 0) === 0) {
+          console.log('📚 知识库为空，自动生成中（后台）...')
+          const topics: Record<number, { desc: string; topics: string[] }> = {
+            1: { desc: 'AI基础概念入门', topics:
+  ['什么是大语言模型','Token是什么','怎么写好Prompt','AI能力边界在哪','ChatGPT和Claude和DeepSeek区别'] },
+            2: { desc: '常用工具和框架', topics: ['LangChain入门','向量数据库和RAG原理','AI文档问答怎么做','Function
+  Calling怎么用','AI编程助手对比'] },
+            3: { desc: '进阶应用与架构', topics: ['RAG架构实战','AI
+  Agent开发入门','模型微调是什么','多模态AI融合应用','AI应用成本优化'] }
+          }
+          for (const stage of [1,2,3]) {
+            for (const topic of topics[stage].topics) {
+              try {
+                const { title, content } = await generateKnowledgeContent(stage, topics[stage].desc, topic)
+                await db.execute({ sql: 'INSERT INTO knowledge_base (stage, title, content, category) VALUES (?,?,?,?)',
+  args: [stage, title, content, topics[stage].desc] })
+                console.log('  ✅ ' + title)
+              } catch (e) { console.warn('  ⚠️ 跳过: ' + topic) }
+            }
+          }
+          console.log('📚 知识库自动生成完成！')
+        }
+      } catch (e) { console.warn('⚠️ 种子检查失败:', e) }
+    }, 5000)
+  }
 
 // Start server
 async function main() {
@@ -202,47 +232,10 @@ async function main() {
     try {
       await initDB()
       // Start cron job for daily brief
-       // 首次启动：如果知识库为空，自动生成
-    try {
-      const existing = await db.execute('SELECT COUNT(*) as count FROM knowledge_base')
-      if ((existing.rows[0]?.count as number || 0) === 0) {
-        console.log('📚 知识库为空，首次自动生成中...')
-        const topics: Record<number, { desc: string; topics: string[] }> = {
-          1: { desc: 'AI基础概念入门', topics: ['什么是大语言模型','Token是什么为什么按Token收费','怎么写好Prompt','AI能
-  力边界在哪里','ChatGPT和Claude和DeepSeek区别'] },
-          2: { desc: '常用工具和框架', topics: ['LangChain入门介绍','向量数据库和RAG原理','AI文档问答怎么做','Function
-  Calling介绍','AI编程助手对比'] },
-          3: { desc: '进阶应用与架构', topics: ['RAG架构实战指南','AI
-  Agent开发入门','模型微调是什么','多模态AI融合应用','AI应用成本优化策略'] }
-        }
-        for (const stage of [1,2,3]) {
-          const { desc, topics: ts } = topics[stage]
-          for (const topic of ts) {
-            try {
-              const { title, content } = await generateKnowledgeContent(stage, desc, topic)
-              await db.execute({ sql: 'INSERT INTO knowledge_base (stage, title, content, category) VALUES (?,?,?,?)',
-  args: [stage, title, content, desc] })
-              console.log('  ✅ ' + title)
-            } catch (e) { console.warn('  ⚠️ 跳过: ' + topic) }
-          }
-        }
-        console.log('📚 首次知识库生成完成！')
-      }
-    } catch (e) { console.warn('⚠️ 自动种子检查失败:', e) }
+       // 后台自动种子（不阻塞服务器启动）
+    autoSeedIfEmpty()
 
     startCronJob()
-    startCronJob()
-      startCronJob()
-    } catch (err) {
-      console.error('⚠️ 数据库初始化失败，但服务仍会启动:', err)
-    }
-
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`\n🚀 AI 小白每日资讯 服务已启动`)
-      console.log(`   API:  http://0.0.0.0:${PORT}/api`)
-      console.log(`   前端: http://0.0.0.0:${PORT}\n`)
-    })
-  }
 
   main().catch((err) => {
     console.error('启动失败:', err)
