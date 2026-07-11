@@ -15,132 +15,116 @@ import dotenv from 'dotenv'
   app.use(cors({ origin: '*' }))
   app.use(express.json())
 
-  // Health check - 秒回，不依赖任何东西
-  app.get('/api/health', (_req, res) => {
+  // ===== 健康检查：秒回，不依赖任何东西 =====
+  app.get('/api/health', (_req: any, res: any) => {
     res.json({ status: 'ok' })
   })
 
-  // ===== 先启动服务器 =====
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log('🚀 服务已启动 端口:' + PORT)
+  // ===== 立即启动！不等人！ =====
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log('🚀 服务已启动 :' + PORT)
   })
 
-  // ===== 后台初始化（不阻塞） =====
-  setTimeout(async () => {
-    try {
-      const { initDB, db } = await import('./db.js')
-      await initDB()
+  // ===== 后台慢慢加载数据库和路由 =====
+  import('./db.js').then(async ({ initDB, db }) => {
+    await initDB()
 
-      const { startCronJob, generateAndSaveDailyBrief } = await import('./services/cron.js')
-      startCronJob()
+    const { startCronJob, generateAndSaveDailyBrief } = await import('./services/cron.js')
+    const { fetchAndProcessArticles } = await import('./services/rss.js')
 
-      const { fetchAndProcessArticles } = await import('./services/rss.js')
+    startCronJob()
 
-      // ---- API Routes ----
+    // --- 挂载路由 ---
+    app.get('/api/articles', async (req: any, res: any) => {
+      try {
+        const p = parseInt(req.query.page) || 1, ps = parseInt(req.query.pageSize) || 20
+        const d = req.query.difficulty ? parseInt(req.query.difficulty) : undefined
+        const off = (p - 1) * ps
+        let s = 'SELECT id,COALESCE(translated_title,title)as t,COALESCE(translated_summary,summary)as
+  s,difficulty,source,source_url,published_at,created_at FROM articles'
+        const a: any[] = []
+        if (d) { s += ' WHERE difficulty=?'; a.push(d) }
+        s += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'; a.push(ps, off)
+        const r = await db.execute({ sql: s, args: a })
+        const c = await db.execute('SELECT COUNT(*)as n FROM articles')
+        const t = c.rows[0]?.n as number
+        res.json({ articles: r.rows, pagination: { page: p, pageSize: ps, total: t, totalPages: Math.ceil(t / ps) } })
+      } catch (e) { res.status(500).json({ error: '获取失败' }) }
+    })
 
-      app.get('/api/articles', async (req, res) => {
-        try {
-          const page = parseInt(req.query.page as string) || 1
-          const pageSize = parseInt(req.query.pageSize as string) || 20
-          const difficulty = req.query.difficulty ? parseInt(req.query.difficulty as string) : undefined
-          const offset = (page - 1) * pageSize
-          let sql = 'SELECT id, COALESCE(translated_title, title) as title, COALESCE(translated_summary, summary) as
-  summary, difficulty, source, source_url, published_at, created_at FROM articles'
-          const args: any[] = []
-          if (difficulty) { sql += ' WHERE difficulty = ?'; args.push(difficulty) }
-          sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
-          args.push(pageSize, offset)
-          const result = await db.execute({ sql, args })
-          const countResult = await db.execute('SELECT COUNT(*) as total FROM articles')
-          const total = countResult.rows[0]?.total as number
-          res.json({ articles: result.rows, pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize)
-  } })
-        } catch (err) {
-          res.status(500).json({ error: '获取文章列表失败' })
-        }
-      })
+    app.get('/api/articles/:id', async (req: any, res: any) => {
+      try {
+        const r = await db.execute({ sql: 'SELECT * FROM articles WHERE id=?', args: [req.params.id] })
+        if (!r.rows.length) { res.status(404).json({ error: '不存在' }); return }
+        res.json(r.rows[0])
+      } catch (e) { res.status(500).json({ error: '获取失败' }) }
+    })
 
-      app.get('/api/articles/:id', async (req, res) => {
-        try {
-          const result = await db.execute({ sql: 'SELECT * FROM articles WHERE id = ?', args: [req.params.id] })
-          if (result.rows.length === 0) { res.status(404).json({ error: '文章不存在' }); return }
-          res.json(result.rows[0])
-        } catch (err) { res.status(500).json({ error: '获取详情失败' }) }
-      })
+    app.get('/api/knowledge', async (req: any, res: any) => {
+      try {
+        const st = req.query.stage ? parseInt(req.query.stage) : undefined
+        let s = 'SELECT id,stage,title,category,created_at FROM knowledge_base'
+        const a: any[] = []
+        if (st) { s += ' WHERE stage=?'; a.push(st) }
+        s += ' ORDER BY stage,id'
+        const r = await db.execute({ sql: s, args: a })
+        res.json({ items: r.rows })
+      } catch (e) { res.status(500).json({ error: '获取失败' }) }
+    })
 
-      app.get('/api/knowledge', async (req, res) => {
-        try {
-          const stage = req.query.stage ? parseInt(req.query.stage as string) : undefined
-          let sql = 'SELECT id, stage, title, category, created_at FROM knowledge_base'
-          const args: any[] = []
-          if (stage) { sql += ' WHERE stage = ?'; args.push(stage) }
-          sql += ' ORDER BY stage ASC, id ASC'
-          const result = await db.execute({ sql, args })
-          res.json({ items: result.rows })
-        } catch (err) { res.status(500).json({ error: '获取知识库失败' }) }
-      })
+    app.get('/api/knowledge/:id', async (req: any, res: any) => {
+      try {
+        const r = await db.execute({ sql: 'SELECT * FROM knowledge_base WHERE id=?', args: [req.params.id] })
+        if (!r.rows.length) { res.status(404).json({ error: '不存在' }); return }
+        res.json(r.rows[0])
+      } catch (e) { res.status(500).json({ error: '获取失败' }) }
+    })
 
-      app.get('/api/knowledge/:id', async (req, res) => {
-        try {
-          const result = await db.execute({ sql: 'SELECT * FROM knowledge_base WHERE id = ?', args: [req.params.id] })
-          if (result.rows.length === 0) { res.status(404).json({ error: '文章不存在' }); return }
-          res.json(result.rows[0])
-        } catch (err) { res.status(500).json({ error: '获取详情失败' }) }
-      })
-
-      app.get('/api/daily-brief', async (_req, res) => {
-        try {
-          const result = await db.execute('SELECT * FROM daily_briefs ORDER BY date DESC LIMIT 1')
-          if (result.rows.length === 0) {
-            const brief = await generateAndSaveDailyBrief()
-            res.json(brief)
-            return
-          }
-          const row = result.rows[0]
-          res.json({ id: row.id, date: row.date, intro: row.intro, highlights: JSON.parse(row.highlights as string),
+    app.get('/api/daily-brief', async (_req: any, res: any) => {
+      try {
+        const r = await db.execute('SELECT * FROM daily_briefs ORDER BY date DESC LIMIT 1')
+        if (!r.rows.length) { const b = await generateAndSaveDailyBrief(); res.json(b); return }
+        const row = r.rows[0]
+        res.json({ id: row.id, date: row.date, intro: row.intro, highlights: JSON.parse(row.highlights as string),
   articles: JSON.parse(row.articles_json as string) })
-        } catch (err) { res.status(500).json({ error: '获取简报失败' }) }
-      })
+      } catch (e) { res.status(500).json({ error: '获取失败' }) }
+    })
 
-      app.post('/api/refresh', async (_req, res) => {
-        try {
-          const count = await fetchAndProcessArticles()
-          res.json({ message: '成功抓取 ' + count + ' 篇新文章' })
-        } catch (err) { res.status(500).json({ error: '刷新失败' }) }
-      })
+    app.post('/api/refresh', async (_req: any, res: any) => {
+      try { const n = await fetchAndProcessArticles(); res.json({ message: '抓取' + n + '篇' }) } catch (e) {
+  res.status(500).json({ error: '失败' }) }
+    })
 
-      // 手动种子
-      app.post('/api/seed', async (_req, res) => {
-        res.json({ message: '后台开始生成知识库，约2分钟' })
-        try {
-          const existing = await db.execute('SELECT COUNT(*) as c FROM knowledge_base')
-          if ((existing.rows[0]?.c as number || 0) > 10) return
-          const { generateKnowledgeContent } = await import('./services/ai.js')
-          const topics: Record<number,{d:string;t:string[]}> = {
-            1:{d:'AI基础概念入门',t:['什么是大语言模型','Token是怎么收费的','怎么写好Prompt','AI能力边界在哪','ChatGPT和
-  Claude和DeepSeek区别']},
-            2:{d:'常用工具和框架',t:['LangChain入门','向量数据库和RAG原理','AI文档问答怎么做','Function
-  Calling怎么用','AI编程助手对比']},
-            3:{d:'进阶应用与架构',t:['RAG架构实战','AI
-  Agent开发入门','模型微调是什么','多模态AI融合应用','AI应用成本优化']}
-          }
-          for(const s of [1,2,3]){for(const t of topics[s].t){try{const r=await
-  generateKnowledgeContent(s,topics[s].d,t);await db.execute({sql:'INSERT INTO
-  knowledge_base(stage,title,content,category)VALUES(?,?,?,?)',args:[s,r.title,r.content,topics[s].d]})}catch(e){}}}
-          console.log('📚 知识库生成完成')
-        } catch(e){}
-      })
+    app.post('/api/seed', async (_req: any, res: any) => {
+      res.json({ message: '后台开始' })
+      try {
+        const ex = await db.execute('SELECT COUNT(*)as c FROM knowledge_base')
+        if ((ex.rows[0]?.c as number || 0) > 10) return
+        const { generateKnowledgeContent } = await import('./services/ai.js')
+        const tp: Record<number, { d: string; t: string[] }> = {
+          1: { d: 'AI基础概念', t: ['什么是大语言模型', 'Token怎么收费', '怎么写好Prompt', 'AI能力边界',
+  'ChatGPT和Claude和DeepSeek区别'] },
+          2: { d: '工具和框架', t: ['LangChain入门', '向量数据库和RAG', 'AI文档问答', 'Function Calling',
+  'AI编程助手对比'] },
+          3: { d: '进阶应用', t: ['RAG架构实战', 'AI Agent开发', '模型微调', '多模态AI', 'AI应用成本优化'] }
+        }
+        for (const s of [1, 2, 3]) for (const t of tp[s].t) {
+          try { const x = await generateKnowledgeContent(s, tp[s].d, t); await db.execute({ sql: 'INSERT INTO
+  knowledge_base(stage,title,content,category)VALUES(?,?,?,?)', args: [s, x.title, x.content, tp[s].d] }) } catch (e) {
+  }
+        }
+        console.log('📚 知识库完成')
+      } catch (e) { }
+    })
 
-      console.log('✅ 后端API初始化完成')
+    // 静态前端
+    const cdp = path.resolve(__dirname, '..', 'dist', 'client')
+    app.use(express.static(cdp))
+    app.get('*', (_req: any, res: any) => { res.sendFile(path.join(cdp, 'index.html')) })
 
-      // Serve static frontend
-      const clientDistPath = path.resolve(__dirname, '..', 'dist', 'client')
-      app.use(express.static(clientDistPath))
-      app.get('*', (_req, res) => { res.sendFile(path.join(clientDistPath, 'index.html')) })
-
-    } catch (err) {
-      console.error('后台初始化失败（服务器仍在运行）:', err)
-    }
-  }, 500)
+    console.log('✅ 路由挂载完成')
+  }).catch(err => {
+    console.error('后台加载失败，但服务器仍在运行:', err)
+  })
 
   export default app
